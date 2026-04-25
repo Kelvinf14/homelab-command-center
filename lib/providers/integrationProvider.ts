@@ -151,7 +151,7 @@ async function fetchArrApp(config: IntegrationConfig, provider: "radarr" | "sona
       title: itemTitle(item),
       status: String((item as Record<string, any>)?.status || (item as Record<string, any>)?.trackedDownloadStatus || "queued")
     })),
-    issues: healthIssues.map((message) => ({ source: config.display_name, message, severity: "warning" })),
+    issues: healthIssues.map((message) => ({ source: config.display_name, message, severity: "warning" as const })),
     missing: missingCount ? [{ source: config.display_name, count: missingCount, label: provider === "radarr" ? "Missing movies" : "Missing episodes" }] : [],
     recent: recordsFrom(historyValue)
       .slice(0, 8)
@@ -205,7 +205,7 @@ async function fetchSabnzbd(config: IntegrationConfig): Promise<{
     issues: failed.map((slot: Record<string, any>) => ({
       source: config.display_name,
       message: slot.name || "Failed SABnzbd job",
-      severity: "warning"
+      severity: "warning" as const
     })),
     recent: Array.isArray(history.slots)
       ? history.slots.slice(0, 8).map((slot: Record<string, any>) => ({
@@ -290,7 +290,7 @@ async function fetchTransmission(config: IntegrationConfig): Promise<{
     issues: errors.map((torrent: Record<string, any>) => ({
       source: config.display_name,
       message: torrent.errorString || torrent.name || "Transmission torrent error",
-      severity: "warning"
+      severity: "warning" as const
     }))
   };
 }
@@ -372,7 +372,7 @@ async function runMediaConfig(config: IntegrationConfig) {
       } satisfies MediaAppStatus,
       queue: [],
       downloads: [],
-      issues: [{ source: config.display_name, message, severity: "warning" }],
+      issues: [{ source: config.display_name, message, severity: "warning" as const }],
       missing: [],
       recent: []
     };
