@@ -58,6 +58,17 @@ The compose file maps:
 - `../data:/app/data`
 - `/var/run/docker.sock:/var/run/docker.sock:ro`
 
+## GitHub Container Registry
+
+Pushing to `main` builds the Dockerfile from the repository root and publishes:
+
+```bash
+ghcr.io/kelvinf14/homelab-command-center:latest
+ghcr.io/kelvinf14/homelab-command-center:<git-commit-sha>
+```
+
+The workflow lives at `.github/workflows/docker-publish.yml` and uses GitHub Actions package write permissions for GHCR.
+
 ## Unraid Install
 
 Create a private GitHub repository named `homelab-command-center`, push this source code, then run these commands on Unraid:
@@ -82,6 +93,44 @@ Source should live at:
 
 ```bash
 /mnt/user/appdata/homelab-command-center/source
+```
+
+## Unraid GUI Install
+
+After the GitHub Actions workflow publishes the image, add it through the Unraid Docker UI with these fields:
+
+```text
+Name: HomeLab Command Center
+Repository: ghcr.io/kelvinf14/homelab-command-center:latest
+WebUI: http://[IP]:[PORT:3000]
+```
+
+Port mapping:
+
+```text
+Container Port: 3000
+Host Port: 8095
+Protocol: TCP
+```
+
+Path mappings:
+
+```text
+Container Path: /app/data
+Host Path: /mnt/user/appdata/homelab-command-center/data
+Access Mode: Read/Write
+
+Container Path: /var/run/docker.sock
+Host Path: /var/run/docker.sock
+Access Mode: Read Only
+```
+
+Environment variables:
+
+```env
+TZ=Asia/Jakarta
+ENABLE_ACTIONS=false
+DATABASE_PATH=/app/data/app.db
 ```
 
 ## Update From GitHub
