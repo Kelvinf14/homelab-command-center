@@ -1,0 +1,17 @@
+services:
+  homelab-command-center:
+    build: .
+    container_name: homelab-command-center
+    restart: unless-stopped
+    user: "${PUID:-0}:${PGID:-0}"
+    env_file:
+      - .env
+    ports:
+      - "8095:3000"
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+      ENABLE_ACTIONS: ${ENABLE_ACTIONS:-false}
+      DATABASE_PATH: ${DATABASE_PATH:-/app/data/app.db}
+    volumes:
+      - ../data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
