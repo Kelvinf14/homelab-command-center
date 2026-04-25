@@ -1,14 +1,14 @@
 import type { Provider } from "@/lib/providers/types";
 import { dockerProvider } from "@/lib/providers/dockerProvider";
 import { uptimeProvider } from "@/lib/providers/uptimeProvider";
-import { beszelProvider, mediaPipelineProvider, speedtestProvider } from "@/lib/providers/mockProviders";
+import { beszelProvider, mediaPipelineProvider, speedtestProvider } from "@/lib/providers/integrationProvider";
 
 function notConfiguredProvider(key: string, name: string): Provider<{ configured: false; message: string }> {
   return {
     key,
     name,
     async healthCheck() {
-      return { configured: false, ok: true, message: `${name} is not configured` };
+      return { configured: false, ok: true, status: "not_configured", message: `${name} is not configured` };
     },
     async fetchCurrentStatus() {
       return { configured: false, message: `${name} is not configured` };

@@ -45,9 +45,11 @@ export function DockerPreferenceForm({ container, enableActions }: { container: 
         <option value="critical">Critical</option>
         <option value="ignored">Ignored</option>
       </Select>
-      <Button variant="outline" size="icon" disabled={!enableActions} onClick={restart} title="Restart container">
-        <RotateCcw className="h-4 w-4" />
-      </Button>
+      {enableActions ? (
+        <Button variant="outline" size="icon" onClick={restart} title="Restart container">
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+      ) : null}
     </div>
   );
 }

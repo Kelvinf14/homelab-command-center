@@ -5,6 +5,8 @@ import path from "node:path";
 declare global {
   // eslint-disable-next-line no-var
   var __homelabDb: Database.Database | undefined;
+  // eslint-disable-next-line no-var
+  var __homelabDbError: string | undefined;
 }
 
 function resolveDatabasePath() {
@@ -15,14 +17,49 @@ export function getDb() {
   if (global.__homelabDb) return global.__homelabDb;
 
   const databasePath = resolveDatabasePath();
-  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-  const db = new Database(databasePath);
-  db.pragma("journal_mode = WAL");
+  let db: Database.Database;
+  try {
+    fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+    db = new Database(databasePath);
+    db.pragma("journal_mode = WAL");
+    global.__homelabDbError = undefined;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown SQLite open error";
+    console.error(`[database] Failed to open ${databasePath}: ${message}`);
+    global.__homelabDbError = message;
+    db = new Database(":memory:");
+  }
   db.pragma("foreign_keys = ON");
   global.__homelabDb = db;
-  migrate(db);
-  seed(db);
+  try {
+    migrate(db);
+    seed(db);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown SQLite migration error";
+    console.error(`[database] Failed to migrate ${databasePath}: ${message}`);
+    global.__homelabDbError = message;
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    global.__homelabDb = db;
+    migrate(db);
+    seed(db);
+  }
   return db;
+}
+
+export function getDatabaseError() {
+  return global.__homelabDbError;
+}
+
+function addColumn(db: Database.Database, table: string, definition: string) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.toLowerCase().includes("duplicate column")) {
+      console.error(`[database] Failed to add column ${table}.${definition}: ${message}`);
+    }
+  }
 }
 
 function migrate(db: Database.Database) {
@@ -48,6 +85,8 @@ function migrate(db: Database.Database) {
       name TEXT NOT NULL,
       url TEXT NOT NULL,
       method TEXT NOT NULL DEFAULT 'GET',
+      expected_status_code INTEGER NOT NULL DEFAULT 200,
+      timeout_seconds INTEGER NOT NULL DEFAULT 8,
       interval_seconds INTEGER NOT NULL DEFAULT 60,
       critical INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
@@ -91,7 +130,27 @@ function migrate(db: Database.Database) {
       last_seen TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       resolved_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS integration_configs (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      base_url TEXT,
+      api_key TEXT,
+      username TEXT,
+      password TEXT,
+      token TEXT,
+      last_status TEXT,
+      last_message TEXT,
+      last_checked TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  addColumn(db, "uptime_checks", "expected_status_code INTEGER NOT NULL DEFAULT 200");
+  addColumn(db, "uptime_checks", "timeout_seconds INTEGER NOT NULL DEFAULT 8");
 }
 
 function seed(db: Database.Database) {
@@ -109,7 +168,6 @@ function seed(db: Database.Database) {
     { key: "docker_container_down", label: "Monitored container is not running", threshold: null, severity: "warning" },
     { key: "docker_health_unhealthy", label: "Container healthcheck is unhealthy", threshold: null, severity: "warning" },
     { key: "uptime_check_down", label: "Uptime check is offline", threshold: null, severity: "warning" },
-    { key: "speed_download_low", label: "Download speed below threshold", threshold: 100, severity: "warning" },
-    { key: "server_disk_high", label: "Disk usage above threshold", threshold: 85, severity: "warning" }
+    { key: "media_health_issue", label: "Media integration reports a health issue", threshold: null, severity: "warning" }
   ].forEach((item) => rule.run(item));
 }

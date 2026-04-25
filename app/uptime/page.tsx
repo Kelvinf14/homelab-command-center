@@ -28,6 +28,7 @@ export default async function UptimePage() {
                 <TableHead>Status</TableHead>
                 <TableHead>Uptime</TableHead>
                 <TableHead>Latency</TableHead>
+                <TableHead>Expected</TableHead>
                 <TableHead>Timeline</TableHead>
                 <TableHead>Last checked</TableHead>
               </TableRow>
@@ -42,6 +43,7 @@ export default async function UptimePage() {
                   <TableCell><StatusBadge status={check.ok === null ? "pending" : check.ok ? "online" : "offline"} /></TableCell>
                   <TableCell>{check.uptimePercent}%</TableCell>
                   <TableCell>{check.latencyMs === null ? "n/a" : `${check.latencyMs} ms`}</TableCell>
+                  <TableCell>{check.expectedStatusCode}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       {check.timeline.length ? check.timeline.map((ok, index) => (
@@ -49,12 +51,15 @@ export default async function UptimePage() {
                       )) : <span className="text-sm text-muted-foreground">No history</span>}
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{check.checkedAt || "Never"}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {check.checkedAt || "Never"}
+                    {check.lastError ? <div className="mt-1 text-xs text-red-300">{check.lastError}</div> : null}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {uptime.checks.length === 0 ? <div className="p-6 text-sm text-muted-foreground">Add uptime checks in Settings.</div> : null}
+          {uptime.checks.length === 0 ? <div className="p-6 text-sm text-muted-foreground">No uptime checks configured. Add checks in Settings.</div> : null}
         </CardContent>
       </Card>
     </>

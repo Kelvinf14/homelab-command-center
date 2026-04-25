@@ -1,56 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { PlugZap, Plus, Save, TestTube2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { StatusBadge } from "@/components/status-badge";
-import type { AlertRule, UptimeCheck } from "@/lib/db/repository";
-import type { DockerContainer } from "@/lib/providers/types";
+import type { AlertRule, PublicIntegrationConfig, UptimeCheck } from "@/lib/db/repository";
+import type { DockerContainer, ProviderKey } from "@/lib/providers/types";
+
+type ProviderStatus = { configured: boolean; status?: string; message: string };
 
 type SettingsClientProps = {
   settings: Record<string, string>;
   containers: DockerContainer[];
   alertRules: AlertRule[];
   uptimeChecks: UptimeCheck[];
-  providerStatus: Record<string, { configured: boolean; message: string }>;
+  integrations: PublicIntegrationConfig[];
+  providerStatus: Record<string, ProviderStatus>;
   enableActions: boolean;
 };
 
-const secretProviders = [
-  "BESZEL_API_URL",
-  "BESZEL_API_KEY",
-  "UPTIME_KUMA_API_URL",
-  "UPTIME_KUMA_API_KEY",
-  "SPEEDTEST_TRACKER_API_URL",
-  "SPEEDTEST_TRACKER_API_KEY",
-  "TRACEARR_API_URL",
-  "TRACEARR_API_KEY",
-  "RADARR_API_URL",
-  "RADARR_API_KEY",
-  "RADARR_4K_API_URL",
-  "RADARR_4K_API_KEY",
-  "SONARR_API_URL",
-  "SONARR_API_KEY",
-  "PROWLARR_API_URL",
-  "PROWLARR_API_KEY",
-  "SABNZBD_API_URL",
-  "SABNZBD_API_KEY",
-  "TRANSMISSION_API_URL",
-  "TRANSMISSION_USERNAME",
-  "TRANSMISSION_PASSWORD",
-  "PLEX_API_URL",
-  "PLEX_TOKEN"
+type IntegrationDraft = {
+  id?: string;
+  provider: ProviderKey;
+  display_name: string;
+  enabled: boolean;
+  base_url: string;
+  api_key?: string;
+  username?: string;
+  password?: string;
+  token?: string;
+};
+
+const providerOptions: { value: ProviderKey; label: string; needsApiKey?: boolean; needsToken?: boolean; needsCredentials?: boolean }[] = [
+  { value: "radarr", label: "Radarr", needsApiKey: true },
+  { value: "sonarr", label: "Sonarr", needsApiKey: true },
+  { value: "prowlarr", label: "Prowlarr", needsApiKey: true },
+  { value: "sabnzbd", label: "SABnzbd", needsApiKey: true },
+  { value: "transmission", label: "Transmission", needsCredentials: true },
+  { value: "plex", label: "Plex", needsToken: true },
+  { value: "uptime-kuma", label: "Uptime Kuma", needsCredentials: true },
+  { value: "speedtest", label: "Speedtest Tracker", needsApiKey: true },
+  { value: "beszel", label: "Beszel", needsToken: true },
+  { value: "tracearr", label: "Tracearr", needsApiKey: true }
 ];
+
+function providerMeta(provider: ProviderKey) {
+  return providerOptions.find((item) => item.value === provider) || providerOptions[0];
+}
+
+function fromConfig(config: PublicIntegrationConfig): IntegrationDraft {
+  return {
+    id: config.id,
+    provider: config.provider,
+    display_name: config.display_name,
+    enabled: Boolean(config.enabled),
+    base_url: config.base_url || "",
+    username: config.username || ""
+  };
+}
 
 export function SettingsClient({
   settings,
   containers,
   alertRules,
   uptimeChecks,
+  integrations,
   providerStatus,
   enableActions
 }: SettingsClientProps) {
@@ -58,14 +76,42 @@ export function SettingsClient({
   const [appName, setAppName] = useState(settings.appName || "");
   const [serverName, setServerName] = useState(settings.serverName || "");
   const [accent, setAccent] = useState(settings.accent || "teal");
-  const [newCheck, setNewCheck] = useState({ name: "", url: "", method: "GET", interval_seconds: 60, critical: false, enabled: true });
+  const [newCheck, setNewCheck] = useState({
+    name: "",
+    url: "",
+    method: "GET",
+    expected_status_code: 200,
+    timeout_seconds: 8,
+    interval_seconds: 60,
+    critical: false,
+    enabled: true
+  });
+  const [drafts, setDrafts] = useState<Record<string, IntegrationDraft>>(
+    Object.fromEntries(integrations.map((config) => [config.id, fromConfig(config)]))
+  );
+  const [newIntegration, setNewIntegration] = useState<IntegrationDraft>({
+    provider: "radarr",
+    display_name: "Radarr",
+    enabled: true,
+    base_url: ""
+  });
+  const [testResults, setTestResults] = useState<Record<string, string>>({});
+
+  const integrationRows = useMemo(
+    () => integrations.map((config) => ({ config, draft: drafts[config.id] || fromConfig(config) })),
+    [integrations, drafts]
+  );
 
   async function post(type: string, payload: unknown) {
-    await fetch("/api/settings", {
+    const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, payload })
     });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.error || "Save failed");
+    }
     router.refresh();
   }
 
@@ -96,12 +142,103 @@ export function SettingsClient({
 
   async function addCheck() {
     await post("uptimeCheck", newCheck);
-    setNewCheck({ name: "", url: "", method: "GET", interval_seconds: 60, critical: false, enabled: true });
+    setNewCheck({
+      name: "",
+      url: "",
+      method: "GET",
+      expected_status_code: 200,
+      timeout_seconds: 8,
+      interval_seconds: 60,
+      critical: false,
+      enabled: true
+    });
   }
 
   async function deleteCheck(id: string) {
     await fetch(`/api/uptime/${id}`, { method: "DELETE" });
     router.refresh();
+  }
+
+  function updateDraft(id: string, patch: Partial<IntegrationDraft>) {
+    setDrafts((current) => ({ ...current, [id]: { ...(current[id] || { provider: "radarr", display_name: "", enabled: true, base_url: "" }), ...patch } }));
+  }
+
+  async function saveIntegration(draft: IntegrationDraft) {
+    await post("integrationConfig", {
+      ...draft,
+      api_key: draft.api_key || undefined,
+      password: draft.password || undefined,
+      token: draft.token || undefined
+    });
+    if (!draft.id) {
+      setNewIntegration({ provider: "radarr", display_name: "Radarr", enabled: true, base_url: "" });
+    }
+  }
+
+  async function deleteIntegration(id: string) {
+    await fetch(`/api/integrations/${id}`, { method: "DELETE" });
+    router.refresh();
+  }
+
+  async function testIntegration(id: string) {
+    const response = await fetch("/api/integrations/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id })
+    });
+    const body = await response.json();
+    setTestResults((current) => ({ ...current, [id]: body.error || `${body.status}: ${body.message}` }));
+    router.refresh();
+  }
+
+  function renderIntegrationFields(draft: IntegrationDraft, onChange: (patch: Partial<IntegrationDraft>) => void, saved?: PublicIntegrationConfig) {
+    const meta = providerMeta(draft.provider);
+    return (
+      <div className="grid gap-3 lg:grid-cols-[.9fr_1fr_1.4fr_.7fr]">
+        <Select
+          value={draft.provider}
+          onChange={(event) => {
+            const provider = event.target.value as ProviderKey;
+            onChange({ provider, display_name: providerMeta(provider).label });
+          }}
+        >
+          {providerOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </Select>
+        <Input placeholder="Display name" value={draft.display_name} onChange={(event) => onChange({ display_name: event.target.value })} />
+        <Input placeholder="Base URL, for example http://tower:7878" value={draft.base_url} onChange={(event) => onChange({ base_url: event.target.value })} />
+        <Select value={draft.enabled ? "enabled" : "disabled"} onChange={(event) => onChange({ enabled: event.target.value === "enabled" })}>
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+        </Select>
+        {meta.needsApiKey ? (
+          <Input
+            placeholder={saved?.has_api_key ? "API key saved - leave blank to keep" : "API key"}
+            value={draft.api_key || ""}
+            onChange={(event) => onChange({ api_key: event.target.value })}
+          />
+        ) : null}
+        {meta.needsToken ? (
+          <Input
+            placeholder={saved?.has_token ? "Token saved - leave blank to keep" : "Token"}
+            value={draft.token || ""}
+            onChange={(event) => onChange({ token: event.target.value })}
+          />
+        ) : null}
+        {meta.needsCredentials ? (
+          <>
+            <Input placeholder="Username" value={draft.username || ""} onChange={(event) => onChange({ username: event.target.value })} />
+            <Input
+              type="password"
+              placeholder={saved?.has_password ? "Password saved - leave blank to keep" : "Password"}
+              value={draft.password || ""}
+              onChange={(event) => onChange({ password: event.target.value })}
+            />
+          </>
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -149,6 +286,66 @@ export function SettingsClient({
 
       <Card>
         <CardHeader>
+          <CardTitle>Provider Integrations</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {Object.entries(providerStatus).map(([key, status]) => (
+              <div key={key} className="rounded-lg border border-border/60 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium">{key}</div>
+                  <StatusBadge status={status.status || (status.configured ? "connected" : "not configured")} />
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">{status.message}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg border border-border/60 p-3">
+            <div className="mb-3 flex items-center gap-2 font-medium">
+              <PlugZap className="h-4 w-4" />
+              Add integration
+            </div>
+            {renderIntegrationFields(newIntegration, (patch) => setNewIntegration((current) => ({ ...current, ...patch })))}
+            <Button className="mt-3" onClick={() => saveIntegration(newIntegration)} disabled={!newIntegration.display_name || !newIntegration.base_url}>
+              <Plus className="h-4 w-4" />
+              Add
+            </Button>
+          </div>
+
+          {integrationRows.map(({ config, draft }) => (
+            <div key={config.id} className="rounded-lg border border-border/60 p-3">
+              <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="font-medium">{config.display_name}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {providerMeta(config.provider).label} - {config.last_message || "Not tested yet"}
+                  </div>
+                </div>
+                <StatusBadge status={config.last_status || (config.enabled ? "not tested" : "disabled")} />
+              </div>
+              {renderIntegrationFields(draft, (patch) => updateDraft(config.id, patch), config)}
+              {testResults[config.id] ? <div className="mt-2 text-sm text-muted-foreground">{testResults[config.id]}</div> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button onClick={() => saveIntegration(draft)}>
+                  <Save className="h-4 w-4" />
+                  Save
+                </Button>
+                <Button variant="outline" onClick={() => testIntegration(config.id)}>
+                  <TestTube2 className="h-4 w-4" />
+                  Test
+                </Button>
+                <Button variant="outline" size="icon" onClick={() => deleteIntegration(config.id)} title="Delete integration">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Monitored Containers</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -178,14 +375,24 @@ export function SettingsClient({
           <CardTitle>Uptime Checks</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-[1fr_1.5fr_.7fr_.7fr_auto]">
+          <div className="grid gap-3 md:grid-cols-[1fr_1.5fr_.55fr_.55fr_.55fr_.65fr_.65fr_.65fr_auto]">
             <Input placeholder="Name" value={newCheck.name} onChange={(event) => setNewCheck({ ...newCheck, name: event.target.value })} />
             <Input placeholder="https://service.local" value={newCheck.url} onChange={(event) => setNewCheck({ ...newCheck, url: event.target.value })} />
             <Select value={newCheck.method} onChange={(event) => setNewCheck({ ...newCheck, method: event.target.value })}>
               <option value="GET">GET</option>
               <option value="HEAD">HEAD</option>
             </Select>
+            <Input type="number" min={100} max={599} value={newCheck.expected_status_code} onChange={(event) => setNewCheck({ ...newCheck, expected_status_code: Number(event.target.value) })} />
+            <Input type="number" min={1} value={newCheck.timeout_seconds} onChange={(event) => setNewCheck({ ...newCheck, timeout_seconds: Number(event.target.value) })} />
             <Input type="number" min={30} value={newCheck.interval_seconds} onChange={(event) => setNewCheck({ ...newCheck, interval_seconds: Number(event.target.value) })} />
+            <Select value={newCheck.enabled ? "enabled" : "disabled"} onChange={(event) => setNewCheck({ ...newCheck, enabled: event.target.value === "enabled" })}>
+              <option value="enabled">Enabled</option>
+              <option value="disabled">Disabled</option>
+            </Select>
+            <Select value={newCheck.critical ? "critical" : "optional"} onChange={(event) => setNewCheck({ ...newCheck, critical: event.target.value === "critical" })}>
+              <option value="optional">Optional</option>
+              <option value="critical">Critical</option>
+            </Select>
             <Button onClick={addCheck} disabled={!newCheck.name || !newCheck.url}>
               <Plus className="h-4 w-4" />
               Add
@@ -196,7 +403,9 @@ export function SettingsClient({
               <div key={check.id} className="flex flex-col gap-3 rounded-lg border border-border/60 p-3 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="font-medium">{check.name}</div>
-                  <div className="text-sm text-muted-foreground">{check.url} - every {check.interval_seconds}s</div>
+                  <div className="text-sm text-muted-foreground">
+                    {check.url} - expect {check.expected_status_code} - timeout {check.timeout_seconds}s - every {check.interval_seconds}s
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={check.critical ? "critical" : "optional"} />
@@ -242,29 +451,6 @@ export function SettingsClient({
               </Select>
             </div>
           ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Provider API Keys</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {Object.entries(providerStatus).map(([key, status]) => (
-              <div key={key} className="rounded-lg border border-border/60 p-3">
-                <div className="font-medium">{key}</div>
-                <div className="mt-1 text-sm text-muted-foreground">{status.message}</div>
-              </div>
-            ))}
-          </div>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {secretProviders.map((envName) => (
-              <div key={envName} className="rounded-md border border-border/60 bg-background/40 px-3 py-2 text-sm text-muted-foreground">
-                {envName}
-              </div>
-            ))}
-          </div>
         </CardContent>
       </Card>
     </div>

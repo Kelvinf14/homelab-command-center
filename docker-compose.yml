@@ -3,7 +3,6 @@ services:
     build: .
     container_name: homelab-command-center
     restart: unless-stopped
-    user: "${PUID:-0}:${PGID:-0}"
     env_file:
       - .env
     ports:

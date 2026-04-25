@@ -16,8 +16,7 @@ function severityFor(ruleSeverity: string, explicitCritical: boolean) {
 export function evaluateAlerts(input: {
   containers: DockerContainer[];
   uptimeChecks: UptimeStatus[];
-  serverDisk: number;
-  speedDownload: number;
+  mediaIssues?: { source: string; message: string; severity: "warning" | "critical" }[];
 }) {
   const rules = ruleMap();
   const alerts: GeneratedAlert[] = [];
@@ -88,41 +87,22 @@ export function evaluateAlerts(input: {
     );
   });
 
-  const diskRule = rules.get("server_disk_high");
-  if (diskRule?.enabled && diskRule.threshold !== null && input.serverDisk >= diskRule.threshold) {
+  input.mediaIssues?.forEach((issue, index) => {
     push(
       {
-        id: "server:disk:high",
-        source: "server",
-        source_id: "disk",
-        type: "server_disk_high",
-        severity: "warning",
-        title: "Disk usage is high",
-        message: `Disk usage is ${input.serverDisk}%, above the configured ${diskRule.threshold}% threshold.`,
+        id: `media:${issue.source}:${index}:${issue.message.slice(0, 40)}`,
+        source: "media",
+        source_id: issue.source,
+        type: "media_health_issue",
+        severity: issue.severity,
+        title: `${issue.source} needs attention`,
+        message: issue.message,
         muted: 0,
         ignored: 0
       },
-      "server_disk_high"
+      "media_health_issue"
     );
-  }
-
-  const speedRule = rules.get("speed_download_low");
-  if (speedRule?.enabled && speedRule.threshold !== null && input.speedDownload < speedRule.threshold) {
-    push(
-      {
-        id: "speedtest:download:low",
-        source: "speedtest",
-        source_id: "download",
-        type: "speed_download_low",
-        severity: "warning",
-        title: "Download speed is below target",
-        message: `Latest download speed is ${input.speedDownload} Mbps, below ${speedRule.threshold} Mbps.`,
-        muted: 0,
-        ignored: 0
-      },
-      "speed_download_low"
-    );
-  }
+  });
 
   syncAlerts(alerts);
   return alerts;

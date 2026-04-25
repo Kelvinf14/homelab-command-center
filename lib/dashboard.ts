@@ -17,14 +17,13 @@ export async function getDashboardSnapshot() {
     speedtestProvider.fetchCurrentStatus(),
     uptimeProvider.fetchCurrentStatus(),
     mediaPipelineProvider.fetchCurrentStatus(),
-    dockerHealth.configured ? dockerProvider.fetchCurrentStatus() : Promise.resolve({ containers: [] })
+    dockerHealth.ok ? dockerProvider.fetchCurrentStatus() : Promise.resolve({ containers: [] })
   ]);
 
   evaluateAlerts({
     containers: docker.containers,
     uptimeChecks: uptime.checks,
-    serverDisk: server.disk,
-    speedDownload: speedtest.latest.download
+    mediaIssues: media.issues
   });
 
   const alerts = getAlerts("active");

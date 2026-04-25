@@ -16,7 +16,7 @@ export default async function OverviewPage() {
   const running = snapshot.docker.containers.filter((container) => container.state === "running").length;
   const uptimeOnline = snapshot.uptime.checks.filter((check) => check.ok === true).length;
   const uptimeConfigured = snapshot.uptime.checks.length;
-  const mediaWarnings = snapshot.media.pipeline.filter((stage) => stage.status !== "good").length;
+  const mediaConnected = snapshot.media.apps.filter((app) => app.status === "connected").length;
 
   return (
     <>
@@ -85,10 +85,14 @@ export default async function OverviewPage() {
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title="Server" value={`${snapshot.server.cpu}% CPU`} detail={`${snapshot.server.ram}% RAM, ${snapshot.server.disk}% disk`} progress={snapshot.server.cpu} />
+        <MetricCard title="Server" value={snapshot.server.status === "connected" ? "Connected" : snapshot.server.status === "unavailable" ? "Unavailable" : "Not configured"} detail={snapshot.server.message} />
         <MetricCard title="Docker" value={`${running}/${snapshot.docker.containers.length}`} detail={snapshot.providers.docker.message} progress={snapshot.docker.containers.length ? (running / snapshot.docker.containers.length) * 100 : 0} />
         <MetricCard title="Uptime" value={uptimeConfigured ? `${uptimeOnline}/${uptimeConfigured}` : "Not set"} detail={snapshot.providers.uptime.message} />
-        <MetricCard title="Internet" value={`${snapshot.speedtest.latest.download} Mbps`} detail={`${snapshot.speedtest.latest.upload} Mbps up, ${snapshot.speedtest.latest.ping} ms ping`} />
+        <MetricCard
+          title="Internet"
+          value={snapshot.speedtest.latest ? (snapshot.speedtest.latest.download === null ? "n/a" : `${snapshot.speedtest.latest.download} Mbps`) : snapshot.speedtest.status === "unavailable" ? "Unavailable" : "Not configured"}
+          detail={snapshot.speedtest.latest ? `${snapshot.speedtest.latest.upload ?? "n/a"} Mbps up, ${snapshot.speedtest.latest.ping ?? "n/a"} ms ping` : snapshot.speedtest.message}
+        />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
@@ -97,9 +101,13 @@ export default async function OverviewPage() {
             <CardTitle className="flex items-center gap-2"><Server className="h-4 w-4" /> Server Status</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <div>Uptime: {snapshot.server.uptime}</div>
-            <div>Network: {snapshot.server.networkIn} MB/s in, {snapshot.server.networkOut} MB/s out</div>
-            <div>Provider: {snapshot.providers.beszel.message}</div>
+            <div>Status: {snapshot.server.status}</div>
+            <div>{snapshot.server.message}</div>
+            {snapshot.server.metrics ? (
+              <div>
+                CPU {snapshot.server.metrics.cpuPercent ?? "n/a"}% - Memory {snapshot.server.metrics.memoryPercent ?? "n/a"}% - Disk {snapshot.server.metrics.diskPercent ?? "n/a"}%
+              </div>
+            ) : null}
           </CardContent>
         </Card>
         <Card>
@@ -107,9 +115,15 @@ export default async function OverviewPage() {
             <CardTitle className="flex items-center gap-2"><Wifi className="h-4 w-4" /> Internet Summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <div>ISP: {snapshot.speedtest.latest.isp}</div>
-            <div>Jitter: {snapshot.speedtest.latest.jitter} ms</div>
-            <div>Latest test: {snapshot.speedtest.latest.at}</div>
+            {snapshot.speedtest.latest ? (
+              <>
+                <div>ISP: {snapshot.speedtest.latest.isp || "Unknown"}</div>
+                <div>Jitter: {snapshot.speedtest.latest.jitter ?? "n/a"} ms</div>
+                <div>Latest test: {snapshot.speedtest.latest.at || "Unknown"}</div>
+              </>
+            ) : (
+              <div>{snapshot.speedtest.message}</div>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -117,8 +131,14 @@ export default async function OverviewPage() {
             <CardTitle className="flex items-center gap-2"><RadioTower className="h-4 w-4" /> Media Pipeline</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <div>{snapshot.media.apps.filter((app) => app.status === "online").length}/{snapshot.media.apps.length} apps online</div>
-            <div>{mediaWarnings} pipeline stages need review</div>
+            {snapshot.media.configured ? (
+              <>
+                <div>{mediaConnected}/{snapshot.media.apps.length} apps connected</div>
+                <div>{snapshot.media.issues.length} issue(s), {snapshot.media.queue.length} queued item(s)</div>
+              </>
+            ) : (
+              <div>No media integrations configured.</div>
+            )}
             <div>Provider: {snapshot.providers.media.message}</div>
           </CardContent>
         </Card>

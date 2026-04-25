@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return jsonResponse(async () => {
     const health = await dockerProvider.healthCheck();
-    if (!health.configured) return { health, containers: [] };
+    if (!health.ok) return { health, containers: [] };
     const status = await dockerProvider.fetchCurrentStatus();
     return { health, ...status };
   });

@@ -30,6 +30,8 @@ export default async function DockerPage() {
                 <TableHead>Status</TableHead>
                 <TableHead>Image</TableHead>
                 <TableHead>Ports</TableHead>
+                <TableHead>Network</TableHead>
+                <TableHead>Labels</TableHead>
                 <TableHead>Resources</TableHead>
                 <TableHead>Restarts</TableHead>
                 <TableHead>Health</TableHead>
@@ -46,8 +48,12 @@ export default async function DockerPage() {
                   <TableCell><StatusBadge status={container.state} /></TableCell>
                   <TableCell className="max-w-52 truncate text-muted-foreground">{container.image}</TableCell>
                   <TableCell className="max-w-44 text-muted-foreground">{container.ports.join(", ") || "None"}</TableCell>
+                  <TableCell className="text-muted-foreground">{container.networkMode}</TableCell>
+                  <TableCell className="max-w-56 truncate text-muted-foreground">
+                    {Object.keys(container.labels).length ? Object.entries(container.labels).slice(0, 3).map(([key, value]) => `${key}=${value}`).join(", ") : "None"}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {container.cpuPercent ?? 0}% CPU - {formatBytes(container.memoryUsage || 0)}
+                    {container.cpuPercent === null ? "n/a" : `${container.cpuPercent}%`} CPU - {container.memoryUsage === null ? "n/a" : formatBytes(container.memoryUsage)}
                   </TableCell>
                   <TableCell>{container.restartCount}</TableCell>
                   <TableCell><StatusBadge status={container.health} /></TableCell>

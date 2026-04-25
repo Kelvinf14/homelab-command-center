@@ -7,15 +7,15 @@ import {
 } from "@/lib/db/repository";
 import type { Provider, UptimeStatus } from "@/lib/providers/types";
 
-async function runCheck(url: string, method: "GET" | "HEAD") {
+async function runCheck(url: string, method: "GET" | "HEAD", expectedStatusCode: number, timeoutSeconds: number) {
   const started = performance.now();
   try {
-    const response = await fetch(url, { method, cache: "no-store", signal: AbortSignal.timeout(8000) });
+    const response = await fetch(url, { method, cache: "no-store", signal: AbortSignal.timeout(timeoutSeconds * 1000) });
     return {
-      ok: response.ok,
+      ok: response.status === expectedStatusCode,
       statusCode: response.status,
       latencyMs: Math.round(performance.now() - started),
-      error: null
+      error: response.status === expectedStatusCode ? null : `Expected ${expectedStatusCode}, got ${response.status}`
     };
   } catch (error) {
     return {
@@ -36,7 +36,7 @@ export async function runDueUptimeChecks() {
       const last = latest.get(check.id);
       const elapsed = last ? (Date.now() - new Date(last.checked_at).getTime()) / 1000 : Number.POSITIVE_INFINITY;
       if (elapsed < check.interval_seconds) return;
-      const result = await runCheck(check.url, check.method);
+      const result = await runCheck(check.url, check.method, check.expected_status_code, check.timeout_seconds);
       insertUptimeResult({
         check_id: check.id,
         ok: result.ok,
@@ -56,6 +56,7 @@ export const uptimeProvider: Provider<{ checks: UptimeStatus[] }> = {
     return {
       configured: checks.length > 0,
       ok: true,
+      status: checks.length > 0 ? "connected" : "not_configured",
       message: checks.length > 0 ? `${checks.length} uptime checks configured` : "No uptime checks configured"
     };
   },
@@ -80,10 +81,13 @@ export const uptimeProvider: Provider<{ checks: UptimeStatus[] }> = {
           url: check.url,
           enabled: Boolean(check.enabled),
           critical: Boolean(check.critical),
+          expectedStatusCode: check.expected_status_code,
+          timeoutSeconds: check.timeout_seconds,
           ok: latestResult ? Boolean(latestResult.ok) : null,
           latencyMs: latestResult?.latency_ms ?? null,
           uptimePercent: itemHistory.length ? Math.round((upCount / itemHistory.length) * 1000) / 10 : 100,
           statusCode: latestResult?.status_code ?? null,
+          lastError: latestResult?.error ?? null,
           checkedAt: latestResult?.checked_at ?? null,
           timeline: itemHistory.slice(0, 24).reverse().map((item) => Boolean(item.ok))
         };

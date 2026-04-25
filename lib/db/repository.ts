@@ -15,6 +15,8 @@ export type UptimeCheck = {
   name: string;
   url: string;
   method: "GET" | "HEAD";
+  expected_status_code: number;
+  timeout_seconds: number;
   interval_seconds: number;
   critical: number;
   enabled: number;
@@ -43,6 +45,37 @@ export type AlertRule = {
   muted: number;
   threshold: number | null;
   severity: "info" | "warning" | "critical";
+};
+
+export type IntegrationConfig = {
+  id: string;
+  provider:
+    | "radarr"
+    | "sonarr"
+    | "prowlarr"
+    | "sabnzbd"
+    | "transmission"
+    | "plex"
+    | "uptime-kuma"
+    | "speedtest"
+    | "beszel"
+    | "tracearr";
+  display_name: string;
+  enabled: number;
+  base_url: string | null;
+  api_key: string | null;
+  username: string | null;
+  password: string | null;
+  token: string | null;
+  last_status: string | null;
+  last_message: string | null;
+  last_checked: string | null;
+};
+
+export type PublicIntegrationConfig = Omit<IntegrationConfig, "api_key" | "password" | "token"> & {
+  has_api_key: boolean;
+  has_password: boolean;
+  has_token: boolean;
 };
 
 export function getSettings() {
@@ -115,12 +148,14 @@ export function upsertUptimeCheck(input: Partial<UptimeCheck> & Pick<UptimeCheck
   const id = input.id || randomUUID();
   getDb()
     .prepare(`
-      INSERT INTO uptime_checks (id, name, url, method, interval_seconds, critical, enabled, updated_at)
-      VALUES (@id, @name, @url, @method, @interval_seconds, @critical, @enabled, CURRENT_TIMESTAMP)
+      INSERT INTO uptime_checks (id, name, url, method, expected_status_code, timeout_seconds, interval_seconds, critical, enabled, updated_at)
+      VALUES (@id, @name, @url, @method, @expected_status_code, @timeout_seconds, @interval_seconds, @critical, @enabled, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         url = excluded.url,
         method = excluded.method,
+        expected_status_code = excluded.expected_status_code,
+        timeout_seconds = excluded.timeout_seconds,
         interval_seconds = excluded.interval_seconds,
         critical = excluded.critical,
         enabled = excluded.enabled,
@@ -131,6 +166,8 @@ export function upsertUptimeCheck(input: Partial<UptimeCheck> & Pick<UptimeCheck
       name: input.name,
       url: input.url,
       method: input.method || "GET",
+      expected_status_code: input.expected_status_code || 200,
+      timeout_seconds: input.timeout_seconds || 8,
       interval_seconds: input.interval_seconds || 60,
       critical: input.critical ? 1 : 0,
       enabled: input.enabled === 0 ? 0 : 1
@@ -195,6 +232,81 @@ export function getAlertRules() {
   return getDb().prepare("SELECT * FROM alert_rules ORDER BY key ASC").all() as AlertRule[];
 }
 
+export function getIntegrationConfigs() {
+  return getDb()
+    .prepare("SELECT * FROM integration_configs ORDER BY provider ASC, display_name ASC")
+    .all() as IntegrationConfig[];
+}
+
+export function getPublicIntegrationConfigs() {
+  return getIntegrationConfigs().map(({ api_key, password, token, ...config }) => ({
+    ...config,
+    has_api_key: Boolean(api_key),
+    has_password: Boolean(password),
+    has_token: Boolean(token)
+  })) satisfies PublicIntegrationConfig[];
+}
+
+export function getEnabledIntegrationConfigs(provider?: IntegrationConfig["provider"]) {
+  const configs = getIntegrationConfigs().filter((config) => config.enabled);
+  return provider ? configs.filter((config) => config.provider === provider) : configs;
+}
+
+export function upsertIntegrationConfig(input: Partial<IntegrationConfig> & Pick<IntegrationConfig, "provider" | "display_name">) {
+  const id = input.id || randomUUID();
+  const existing = input.id
+    ? (getDb().prepare("SELECT * FROM integration_configs WHERE id = ?").get(input.id) as IntegrationConfig | undefined)
+    : undefined;
+  getDb()
+    .prepare(`
+      INSERT INTO integration_configs (
+        id, provider, display_name, enabled, base_url, api_key, username, password, token, updated_at
+      )
+      VALUES (
+        @id, @provider, @display_name, @enabled, @base_url, @api_key, @username, @password, @token, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        provider = excluded.provider,
+        display_name = excluded.display_name,
+        enabled = excluded.enabled,
+        base_url = excluded.base_url,
+        api_key = excluded.api_key,
+        username = excluded.username,
+        password = excluded.password,
+        token = excluded.token,
+        updated_at = CURRENT_TIMESTAMP
+    `)
+    .run({
+      id,
+      provider: input.provider,
+      display_name: input.display_name,
+      enabled: input.enabled ? 1 : 0,
+      base_url: input.base_url || null,
+      api_key: input.api_key === undefined ? existing?.api_key || null : input.api_key || null,
+      username: input.username === undefined ? existing?.username || null : input.username || null,
+      password: input.password === undefined ? existing?.password || null : input.password || null,
+      token: input.token === undefined ? existing?.token || null : input.token || null
+    });
+  return id;
+}
+
+export function deleteIntegrationConfig(id: string) {
+  getDb().prepare("DELETE FROM integration_configs WHERE id = ?").run(id);
+}
+
+export function updateIntegrationConnectionResult(id: string, status: string, message: string) {
+  getDb()
+    .prepare(`
+      UPDATE integration_configs
+      SET last_status = @status,
+          last_message = @message,
+          last_checked = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = @id
+    `)
+    .run({ id, status, message });
+}
+
 export function updateAlertRule(input: Pick<AlertRule, "key"> & Partial<AlertRule>) {
   getDb()
     .prepare(`
@@ -225,11 +337,11 @@ export function syncAlerts(alerts: Omit<AlertRow, "first_seen" | "last_seen" | "
       severity = excluded.severity,
       title = excluded.title,
       message = excluded.message,
-      status = CASE WHEN alerts.status = 'resolved' THEN alerts.status ELSE 'active' END,
+      status = 'active',
       muted = CASE WHEN alerts.muted = 1 THEN alerts.muted ELSE excluded.muted END,
       ignored = CASE WHEN alerts.ignored = 1 THEN alerts.ignored ELSE excluded.ignored END,
       last_seen = CURRENT_TIMESTAMP,
-      resolved_at = CASE WHEN alerts.status = 'resolved' THEN alerts.resolved_at ELSE NULL END
+      resolved_at = NULL
   `);
   const resolveStale = db.prepare(`
     UPDATE alerts

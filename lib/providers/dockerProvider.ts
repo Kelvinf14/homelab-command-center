@@ -11,6 +11,7 @@ type DockerListItem = {
   Image: string;
   State: string;
   Status: string;
+  Labels?: Record<string, string>;
   Ports?: { IP?: string; PrivatePort: number; PublicPort?: number; Type: string }[];
 };
 
@@ -23,6 +24,12 @@ type DockerInspect = {
     Status: string;
     StartedAt: string;
     Health?: { Status: "healthy" | "unhealthy" | "starting" };
+  };
+  Config?: {
+    Labels?: Record<string, string>;
+  };
+  HostConfig?: {
+    NetworkMode?: string;
   };
 };
 
@@ -85,12 +92,15 @@ export const dockerProvider: Provider<{ containers: DockerContainer[] }> = {
   async healthCheck() {
     try {
       await dockerApi<{ Version: string }>("/version");
-      return { configured: true, ok: true, message: "Docker socket reachable" };
+      return { configured: true, ok: true, status: "connected", message: "Docker socket reachable" };
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Docker socket unavailable";
       return {
-        configured: false,
+        configured: true,
         ok: false,
-        message: error instanceof Error ? error.message : "Docker socket unavailable"
+        status: "unavailable",
+        message,
+        error: message
       };
     }
   },
@@ -126,6 +136,8 @@ export const dockerProvider: Provider<{ containers: DockerContainer[] }> = {
           state: container.State,
           uptimeSeconds,
           ports: mapPorts(container.Ports),
+          networkMode: inspect?.HostConfig?.NetworkMode || "unknown",
+          labels: inspect?.Config?.Labels || container.Labels || {},
           cpuPercent: stats ? calculateCpu(stats) : null,
           memoryUsage: stats?.memory_stats?.usage ?? null,
           memoryLimit: stats?.memory_stats?.limit ?? null,
