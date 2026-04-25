@@ -105,6 +105,7 @@ function formatBytesPerSecond(value: unknown) {
 async function fetchArrApp(config: IntegrationConfig, provider: "radarr" | "sonarr" | "prowlarr"): Promise<{
   app: MediaAppStatus;
   queue: MediaQueueItem[];
+  downloads: MediaPipelineStatus["downloads"];
   issues: MediaPipelineStatus["issues"];
   missing: MediaPipelineStatus["missing"];
   recent: MediaPipelineStatus["recent"];
@@ -151,6 +152,7 @@ async function fetchArrApp(config: IntegrationConfig, provider: "radarr" | "sona
       title: itemTitle(item),
       status: String((item as Record<string, any>)?.status || (item as Record<string, any>)?.trackedDownloadStatus || "queued")
     })),
+    downloads: [],
     issues: healthIssues.map((message) => ({ source: config.display_name, message, severity: "warning" as const })),
     missing: missingCount ? [{ source: config.display_name, count: missingCount, label: provider === "radarr" ? "Missing movies" : "Missing episodes" }] : [],
     recent: recordsFrom(historyValue)
